@@ -40,6 +40,49 @@ type UpdateTaskRequest struct {
 	TaskType    *models.TaskType       `json:"taskType"`
 }
 
+// UpdateTaskStatusRequest represents a minimal request to change status
+type UpdateTaskStatusRequest struct {
+    Status models.TaskStatus `json:"status" binding:"required"`
+}
+
+func parseDateFlexible(dateStr string) (time.Time, bool) {
+    if dateStr == "" {
+        return time.Time{}, false
+    }
+    layouts := []string{
+        "2006-01-02",    // ISO date
+        "2 Jan 2006",    // e.g., 30 Oct 2025
+        time.RFC3339,     // full RFC3339
+        "02 Jan 2006",   // zero-padded day
+    }
+    for _, layout := range layouts {
+        if t, err := time.Parse(layout, dateStr); err == nil {
+            return t, true
+        }
+    }
+    return time.Time{}, false
+}
+
+func calculateEffortDays(startDateStr, endDateStr string) int {
+    start, okStart := parseDateFlexible(startDateStr)
+    end, okEnd := parseDateFlexible(endDateStr)
+    if !okStart || !okEnd {
+        // Fallback to minimum effort 1 when dates invalid/missing
+        return 1
+    }
+    // Normalize to midnight to avoid partial-day rounding issues
+    start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
+    end = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, end.Location())
+    if end.Before(start) {
+        start, end = end, start
+    }
+    days := int(end.Sub(start).Hours() / 24)
+    if days < 1 {
+        return 1
+    }
+    return days
+}
+
 /**
 	GetTasks handles GET /api/tasks
 	Returns all tasks owned by the authenticated user
@@ -61,6 +104,24 @@ func GetTasks(c *gin.Context) {
 			"error": "Failed to fetch tasks",
 		})
 		return
+	}
+
+	// Enrich assignee field for response
+	var users []models.User
+	if err := database.GetDB().Find(&users).Error; err == nil {
+		userByID := make(map[string]models.User, len(users))
+		for _, u := range users {
+			userByID[u.ID] = u
+		}
+
+        for i := range tasks {
+            if u, ok := userByID[tasks[i].AssigneeID]; ok {
+                tasks[i].Assignee = models.Assignee{
+                    ID:   u.ID,
+                    Name: u.Username,
+                }
+            }
+        }
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -101,10 +162,8 @@ func CreateTask(c *gin.Context) {
 		priority = models.PriorityMedium
 	}
 
-	effort := req.Effort
-	if effort == 0 {
-		effort = 1
-	}
+    // Compute effort based on dates; ignore client-provided effort
+    effort := calculateEffortDays(req.StartDate, req.EndDate)
 
 	projectID := req.ProjectID
 	if projectID == "" {
@@ -130,6 +189,8 @@ func CreateTask(c *gin.Context) {
 		TaskType:    req.TaskType,
 		UserID:      userID,
 	}
+
+    // No avatar handling
 
 	result := database.GetDB().Create(&task)
 	if result.Error != nil {
@@ -203,15 +264,16 @@ func UpdateTask(c *gin.Context) {
 		existingTask.AssigneeID = req.Assignee.ID
 		existingTask.Assignee = *req.Assignee
 	}
-	if req.StartDate != nil {
-		existingTask.StartDate = *req.StartDate
-	}
-	if req.EndDate != nil {
-		existingTask.EndDate = *req.EndDate
-	}
-	if req.Effort != nil {
-		existingTask.Effort = *req.Effort
-	}
+    if req.StartDate != nil {
+        existingTask.StartDate = *req.StartDate
+    }
+    if req.EndDate != nil {
+        existingTask.EndDate = *req.EndDate
+    }
+    // Recalculate effort if either date was provided in the update; otherwise leave as-is
+    if req.StartDate != nil || req.EndDate != nil {
+        existingTask.Effort = calculateEffortDays(existingTask.StartDate, existingTask.EndDate)
+    }
 	if req.Priority != nil {
 		existingTask.Priority = *req.Priority
 	}
@@ -228,7 +290,106 @@ func UpdateTask(c *gin.Context) {
 		return
 	}
 
+	// Enrich assignee in response
+    if existingTask.AssigneeID != "" {
+        var u models.User
+        if err := database.GetDB().Where("id = ?", existingTask.AssigneeID).First(&u).Error; err == nil {
+            existingTask.Assignee = models.Assignee{ ID: u.ID, Name: u.Username }
+        }
+    }
+
 	c.JSON(http.StatusOK, existingTask)
+}
+
+// GetTaskByID handles GET /api/tasks/:id
+// Returns a single task owned by the authenticated user
+func GetTaskByID(c *gin.Context) {
+    userID := c.GetString("user_id")
+    if userID == "" {
+        c.JSON(http.StatusUnauthorized, gin.H{
+            "error": "User ID not found in token",
+        })
+        return
+    }
+
+    taskID := c.Param("id")
+    if taskID == "" {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Task ID is required"})
+        return
+    }
+
+    var task models.Task
+    result := database.GetDB().Where("id = ? AND user_id = ?", taskID, userID).First(&task)
+    if result.Error != nil {
+        if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+            c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+        } else {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch task"})
+        }
+        return
+    }
+
+    // Enrich assignee
+    if task.AssigneeID != "" {
+        var u models.User
+        if err := database.GetDB().Where("id = ?", task.AssigneeID).First(&u).Error; err == nil {
+            task.Assignee = models.Assignee{ID: u.ID, Name: u.Username}
+        }
+    }
+
+    c.JSON(http.StatusOK, task)
+}
+
+// UpdateTaskStatus handles PATCH /api/tasks/:id/status
+// Updates only the status of a task owned by the authenticated user
+func UpdateTaskStatus(c *gin.Context) {
+    userID := c.GetString("user_id")
+    if userID == "" {
+        c.JSON(http.StatusUnauthorized, gin.H{
+            "error": "User ID not found in token",
+        })
+        return
+    }
+
+    taskID := c.Param("id")
+    if taskID == "" {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Task ID is required"})
+        return
+    }
+
+    var req UpdateTaskStatusRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+
+    var task models.Task
+    result := database.GetDB().Where("id = ? AND user_id = ?", taskID, userID).First(&task)
+    if result.Error != nil {
+        if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+            c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+        } else {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch task"})
+        }
+        return
+    }
+
+    // Explicitly update only the status column to ensure persistence
+    task.Status = req.Status
+    if err := database.GetDB().Model(&task).Update("status", req.Status).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update status"})
+        return
+    }
+
+    // Enrich assignee in response
+    if task.AssigneeID != "" {
+        var u models.User
+        if err := database.GetDB().Where("id = ?", task.AssigneeID).First(&u).Error; err == nil {
+            task.Assignee = models.Assignee{ID: u.ID, Name: u.Username}
+        }
+    }
+
+    c.JSON(http.StatusOK, task)
 }
 
 // DeleteTask handles DELETE /api/tasks/:id

@@ -19,8 +19,10 @@ func main() {
 	log.Println("API endpoints:")
 	log.Println("  POST   /api/login")
 	log.Println("  GET    /api/tasks")
+	log.Println("  GET    /api/tasks/:id")
 	log.Println("  POST   /api/tasks")
 	log.Println("  PUT    /api/tasks/:id")
+	log.Println("  PATCH  /api/tasks/:id/status")
 	log.Println("  DELETE /api/tasks/:id")
 	log.Println("  GET    /health")
 

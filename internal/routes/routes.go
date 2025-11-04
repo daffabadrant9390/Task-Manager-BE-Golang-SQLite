@@ -16,7 +16,7 @@ func SetupRoutes() *gin.Engine {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204) // This depends on the implementation of the frontend
@@ -47,9 +47,13 @@ func SetupRoutes() *gin.Engine {
 	{
 		// Task endpoints
 		protectedRoutes.GET("/tasks", handlers.GetTasks)
+		protectedRoutes.GET("/tasks/:id", handlers.GetTaskByID)
 		protectedRoutes.POST("/tasks", handlers.CreateTask)
 		protectedRoutes.PUT("/tasks/:id", handlers.UpdateTask)
+		protectedRoutes.PATCH("/tasks/:id/status", handlers.UpdateTaskStatus)
 		protectedRoutes.DELETE("/tasks/:id", handlers.DeleteTask)
+		// Users endpoint
+		protectedRoutes.GET("/users", handlers.GetAllUsers)
 	}
 
 	return ginRouter
