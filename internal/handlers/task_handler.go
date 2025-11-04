@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"task-management-api/internal/database"
 	"task-management-api/internal/models"
 	"time"
@@ -85,7 +87,8 @@ func calculateEffortDays(startDateStr, endDateStr string) int {
 
 /**
 	GetTasks handles GET /api/tasks
-	Returns all tasks owned by the authenticated user
+	Returns all tasks (team-wide) for authenticated users.
+	Optional query param: userId to filter tasks created by a specific user.
 */
 func GetTasks(c *gin.Context) {
 	userID := c.GetString("user_id")
@@ -96,15 +99,56 @@ func GetTasks(c *gin.Context) {
 		return
 	}
 
-	var tasks []models.Task
-	result := database.GetDB().Where("user_id = ?", userID).Find(&tasks)
-	
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch tasks",
-		})
-		return
-	}
+    // Query params: page (default 1), limit (default 5), sort (asc|desc on created_at, default desc)
+    pageStr := c.DefaultQuery("page", "1")
+    limitStr := c.DefaultQuery("limit", "5")
+    sortParam := strings.ToLower(c.DefaultQuery("sort", "desc"))
+    filterUserID := c.Query("userId") // optional: filter by creator
+
+    page, err := strconv.Atoi(pageStr)
+    if err != nil || page < 1 {
+        page = 1
+    }
+    limit, err := strconv.Atoi(limitStr)
+    if err != nil || limit < 1 {
+        limit = 5
+    }
+    if limit > 100 {
+        limit = 100
+    }
+
+    offset := (page - 1) * limit
+
+    order := "created_at desc"
+    if sortParam == "asc" {
+        order = "created_at asc"
+    }
+
+    // Build base query (team-wide); optionally filter by specified userId
+    db := database.GetDB()
+    query := db.Model(&models.Task{})
+    if filterUserID != "" {
+        query = query.Where("user_id = ?", filterUserID)
+    }
+
+    // Total count (without pagination)
+    var total int64
+    if err := query.Count(&total).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{
+            "error": "Failed to count tasks",
+        })
+        return
+    }
+
+    // Fetch paginated tasks with sorting
+    var tasks []models.Task
+    result := query.Session(&gorm.Session{}).Order(order).Limit(limit).Offset(offset).Find(&tasks)
+    if result.Error != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{
+            "error": "Failed to fetch tasks",
+        })
+        return
+    }
 
 	// Enrich assignee field for response
 	var users []models.User
@@ -124,10 +168,14 @@ func GetTasks(c *gin.Context) {
         }
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"tasks": tasks,
-		"count": len(tasks),
-	})
+    c.JSON(http.StatusOK, gin.H{
+        "tasks": tasks,
+        "count": len(tasks), // number of items in this page
+        "total": total,      // total tasks (all pages) for current filter
+        "page":  page,
+        "limit": limit,
+        "sort":  sortParam,
+    })
 }
 
 /**
@@ -440,4 +488,57 @@ func DeleteTask(c *gin.Context) {
 		"message": "Task deleted successfully",
 		"id":      taskID,
 	})
+}
+
+// GetStatsByUser handles GET /api/stats/:userid
+// Returns counts of tasks by status (todo, inProgress, done) where the assignee matches :userid
+func GetStatsByUser(c *gin.Context) {
+    // Ensure request is authenticated
+    authUserID := c.GetString("user_id")
+    if authUserID == "" {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
+        return
+    }
+
+    targetUserID := c.Param("userid")
+    if strings.TrimSpace(targetUserID) == "" {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "userid is required"})
+        return
+    }
+
+    db := database.GetDB()
+
+    type row struct {
+        Status string
+        Count  int64
+    }
+
+    var rows []row
+    if err := db.Model(&models.Task{}).
+        Select("status, COUNT(*) as count").
+        Where("assignee_id = ?", targetUserID).
+        Group("status").
+        Scan(&rows).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to compute stats"})
+        return
+    }
+
+    // Initialize with zeros
+    counts := map[string]int64{
+        string(models.StatusTodo):       0,
+        string(models.StatusInProgress): 0,
+        string(models.StatusDone):       0,
+    }
+    var total int64 = 0
+    for _, r := range rows {
+        counts[r.Status] = r.Count
+        total += r.Count
+    }
+
+    c.JSON(http.StatusOK, gin.H{
+        "todo":       counts[string(models.StatusTodo)],
+        "inProgress": counts[string(models.StatusInProgress)],
+        "done":       counts[string(models.StatusDone)],
+        "total":      total,
+    })
 }

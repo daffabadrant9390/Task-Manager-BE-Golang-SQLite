@@ -52,6 +52,8 @@ func SetupRoutes() *gin.Engine {
 		protectedRoutes.PUT("/tasks/:id", handlers.UpdateTask)
 		protectedRoutes.PATCH("/tasks/:id/status", handlers.UpdateTaskStatus)
 		protectedRoutes.DELETE("/tasks/:id", handlers.DeleteTask)
+		// Stats endpoint by user
+		protectedRoutes.GET("/stats/:userid", handlers.GetStatsByUser)
 		// Users endpoint
 		protectedRoutes.GET("/users", handlers.GetAllUsers)
 	}
