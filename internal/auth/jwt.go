@@ -1,13 +1,25 @@
 package auth
 
 import (
-	"errors"
-	"time"
+    "errors"
+    "os"
+    "time"
 
-	"github.com/golang-jwt/jwt/v5"
+    "github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = []byte("Dummy-secret-key-change-in-production")
+var (
+    jwtSecret  = []byte(getEnv("JWT_SECRET", "development-insecure-secret-change-me"))
+    jwtIssuer  = getEnv("JWT_ISSUER", "task-management-api")
+    jwtAudience = getEnv("JWT_AUDIENCE", "task-management-clients")
+)
+
+func getEnv(key, fallback string) string {
+    if v := os.Getenv(key); v != "" {
+        return v
+    }
+    return fallback
+}
 
 // Claims represents the JWT claims
 type Claims struct {
@@ -25,6 +37,8 @@ func GenerateToken(userID, username string) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
+            Issuer:    jwtIssuer,
+            Audience:  jwt.ClaimStrings{jwtAudience},
 		},
 	}
 
@@ -52,9 +66,24 @@ func ValidateToken(tokenString string) (*Claims, error) {
 		return nil, err
 	}
 
-	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-		return claims, nil
-	}
+    if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+        // Validate issuer and audience
+        if claims.Issuer != jwtIssuer {
+            return nil, errors.New("invalid token issuer")
+        }
+        // Manually check audience for compatibility with jwt v5 types
+        audValid := false
+        for _, aud := range claims.Audience {
+            if aud == jwtAudience {
+                audValid = true
+                break
+            }
+        }
+        if !audValid {
+            return nil, errors.New("invalid token audience")
+        }
+        return claims, nil
+    }
 
 	return nil, errors.New("invalid token")
 }

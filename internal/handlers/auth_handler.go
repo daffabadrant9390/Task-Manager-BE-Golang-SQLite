@@ -5,9 +5,9 @@ import (
 	"task-management-api/internal/auth"
 	"task-management-api/internal/database"
 	"task-management-api/internal/models"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -74,8 +74,8 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	newUser := models.User{
-		ID:       "user-" + time.Now().Format("20060102150405.000000000"),
+    newUser := models.User{
+        ID:       uuid.NewString(),
 		Username: req.Username,
 		Password: string(hashed),
 	}

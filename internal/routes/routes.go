@@ -1,30 +1,37 @@
 package routes
 
 import (
-	"task-management-api/internal/handlers"
-	"task-management-api/internal/middleware"
+    "os"
+    "task-management-api/internal/handlers"
+    "task-management-api/internal/middleware"
 
-	"github.com/gin-gonic/gin"
+    "github.com/gin-gonic/gin"
 )
 
 func SetupRoutes() *gin.Engine {
 	// Create a new GIN Router
 	ginRouter := gin.Default()
 
-	// CORS middleware (for frontend integration)
-	ginRouter.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
+    // CORS middleware (for frontend integration)
+    ginRouter.Use(func(c *gin.Context) {
+        allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
+        if allowedOrigin == "" {
+            // Development default; set ALLOWED_ORIGIN in production
+            allowedOrigin = "http://localhost:3000"
+        }
+        c.Writer.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+        // Do not advertise credentials unless you use cookie-based auth
+        // c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+        c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+        c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204) // This depends on the implementation of the frontend
-			return
-		}
+        if c.Request.Method == "OPTIONS" {
+            c.AbortWithStatus(204)
+            return
+        }
 
-		c.Next()
-	})
+        c.Next()
+    })
 
 	// Health check endpoint
 	ginRouter.GET("/health", func(c *gin.Context) {
