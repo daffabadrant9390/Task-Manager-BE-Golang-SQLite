@@ -15,6 +15,9 @@ func TestGenerateAndValidateToken(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "u-1", claims.UserID)
 	require.Equal(t, "alice", claims.Username)
+    // basic issuer/audience sanity checks
+    require.NotEmpty(t, claims.Issuer)
+    require.NotEmpty(t, claims.Audience)
 }
 
 func TestValidateToken_Invalid(t *testing.T) {
