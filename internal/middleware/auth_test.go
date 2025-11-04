@@ -39,5 +39,3 @@ func TestJWTAuthMiddleware_MissingHeader(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
-
-

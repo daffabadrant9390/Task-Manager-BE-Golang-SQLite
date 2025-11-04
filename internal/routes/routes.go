@@ -29,13 +29,13 @@ func SetupRoutes() *gin.Engine {
 	// Health check endpoint
 	ginRouter.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"status": "ok",
+			"status":  "ok",
 			"message": "Server Task Management API is running in Health Check Endpoint",
 		})
 	})
 
 	// Public routes (no authentication required)
-	api := ginRouter.Group("/api") 
+	api := ginRouter.Group("/api")
 	{
 		// Login endpoint
 		api.POST("/login", handlers.Login)
@@ -45,6 +45,8 @@ func SetupRoutes() *gin.Engine {
 	protectedRoutes := api.Group("")
 	protectedRoutes.Use(middleware.JWTAuthMiddleware())
 	{
+		// WebSocket endpoint
+		protectedRoutes.GET("/ws", handlers.WebSocketHandler)
 		// Task endpoints
 		protectedRoutes.GET("/tasks", handlers.GetTasks)
 		protectedRoutes.GET("/tasks/:id", handlers.GetTaskByID)

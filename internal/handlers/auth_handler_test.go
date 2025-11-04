@@ -39,5 +39,3 @@ func TestLogin_CreatesUserIfNotExists(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NotEmpty(t, resp.Token)
 }
-
-

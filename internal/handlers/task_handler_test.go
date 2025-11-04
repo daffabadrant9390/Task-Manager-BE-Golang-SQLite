@@ -56,5 +56,3 @@ func TestCreateTask_Success(t *testing.T) {
 	require.Equal(t, 2, created.Effort) // 2025-01-01 to 2025-01-03 => 2 days
 	require.Equal(t, assignee.ID, created.Assignee.ID)
 }
-
-

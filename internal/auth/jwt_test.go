@@ -21,5 +21,3 @@ func TestValidateToken_Invalid(t *testing.T) {
 	_, err := ValidateToken("invalid.token")
 	require.Error(t, err)
 }
-
-

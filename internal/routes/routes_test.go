@@ -17,5 +17,3 @@ func TestHealth(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 }
-
-

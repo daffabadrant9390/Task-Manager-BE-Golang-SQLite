@@ -11,7 +11,7 @@ var jwtSecret = []byte("Dummy-secret-key-change-in-production")
 
 // Claims represents the JWT claims
 type Claims struct {
-	UserID string `json:"user_id"`
+	UserID   string `json:"user_id"`
 	Username string `json:"username"`
 	jwt.RegisteredClaims
 }
@@ -19,7 +19,7 @@ type Claims struct {
 // GenerateToken generates a JWT token for the given user
 func GenerateToken(userID, username string) (string, error) {
 	claims := Claims{
-		UserID: userID,
+		UserID:   userID,
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),

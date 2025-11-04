@@ -21,5 +21,3 @@ func NewInMemoryDB() (*gorm.DB, error) {
 	}
 	return db, nil
 }
-
-
